@@ -83,6 +83,13 @@ struct CostFamily {
 template <int kArgs, class TConstArgT = farm_ng::Void>
 struct CostTermSignature {
   std::array<int, kArgs> manifold_id_tuple{};
+
+  void debug() const {
+    for (int i : manifold_id_tuple) {
+      std::cerr << i << " ";
+    }
+    std::cerr << std::endl;
+  }
   TConstArgT constant;
 };
 
@@ -103,40 +110,37 @@ bool constexpr areAllVarEq(
 }
 
 template <class TArgTypes, size_t kNumArgs, size_t kI = 0>
-bool constexpr lessFixed(
-    std::array<int, kNumArgs> const& lhs,
-    std::array<int, kNumArgs> const& rhs) {
-  if constexpr (kI == kNumArgs - 1) {
-    return lhs[kI] <= rhs[kI];
-  } else {
-    if constexpr (
-        std::get<kI>(TArgTypes::kArgTypeArray) == ArgType::conditioned) {
-      return lessFixed<TArgTypes, kNumArgs, kI + 1>(lhs, rhs);
-    } else {
-      if (lhs[kI] == rhs[kI]) {
-        return lessFixed<TArgTypes, kNumArgs, kI + 1>(lhs, rhs);
-      }
-      return lhs[kI] < rhs[kI];
-    }
-  }
-}
+bool  isLess(
+    std::array<int, kNumArgs> lhs, std::array<int, kNumArgs> rhs) {
+  std::array<int, kNumArgs> var_then_cond_lhs;
+  std::array<int, kNumArgs> var_then_cond_rhs;
 
-template <class TArgTypes, size_t kNumArgs, size_t kI = 0>
-bool constexpr isLess(
-    std::array<int, kNumArgs> const& lhs,
-    std::array<int, kNumArgs> const& rhs) {
-  if constexpr (kI == kNumArgs) {
-    return lessFixed<TArgTypes, kNumArgs>(lhs, rhs);
-  } else {
-    if constexpr (std::get<kI>(TArgTypes::kArgTypeArray) == ArgType::variable) {
-      return isLess<TArgTypes, kNumArgs, kI + 1>(lhs, rhs);
-    } else {
-      if (lhs[kI] == rhs[kI]) {
-        return isLess<TArgTypes, kNumArgs, kI + 1>(lhs, rhs);
-      }
-      return lhs[kI] < rhs[kI];
+  int new_id = 0;
+  for (size_t i = 0; i < kNumArgs; ++i) {
+    if (TArgTypes::kArgTypeArray[i] == ArgType::variable) {
+      var_then_cond_lhs[new_id] = lhs[i];
+      var_then_cond_rhs[new_id] = rhs[i];
+      ++new_id;
     }
   }
+  for (size_t i = 0; i < kNumArgs; ++i) {
+    if (TArgTypes::kArgTypeArray[i] == ArgType::conditioned) {
+      var_then_cond_lhs[new_id] = lhs[i];
+      var_then_cond_rhs[new_id] = rhs[i];
+      ++new_id;
+    }
+  }
+
+  return std::equal(
+             var_then_cond_lhs.begin(),
+             var_then_cond_lhs.end(),
+             var_then_cond_rhs.begin(),
+             var_then_cond_rhs.end()) ||
+         std::lexicographical_compare(
+             var_then_cond_lhs.begin(),
+             var_then_cond_lhs.end(),
+             var_then_cond_rhs.begin(),
+             var_then_cond_rhs.end());
 }
 
 template <bool kCalcDx, class TCostFunctor, class... TCostArg>
@@ -226,9 +230,13 @@ apply(
   for (size_t i = 0; i < arg_id_arrays.size(); ++i) {
     auto const& manifold_id_tuple = arg_id_arrays[i].manifold_id_tuple;
 
+    //arg_id_arrays[i].debug();
+
     LeastSquaresCostTerm<kBlockDim, kNumArgs> cost_term;
     for (; i < arg_id_arrays.size(); ++i) {
       CostTermSignature<kNumArgs, ConstantType> const& args = arg_id_arrays[i];
+
+      //args.debug();
 
       FARM_CHECK(isLess<ArgTypesT>(manifold_id_tuple, args.manifold_id_tuple));
 
