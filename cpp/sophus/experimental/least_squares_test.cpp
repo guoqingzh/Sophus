@@ -109,7 +109,7 @@ TEST(binary_cost, smoke) {
 
   // vars: poses, points; fixed: n/a
   {
-    using ArgsList = CostTermRef<2, Eigen::Vector2d>;
+    using ArgsList = CostTermSignature<2, Eigen::Vector2d>;
     std::vector<ArgsList> cost_terms;
     for (size_t point_id = 0; point_id < point_family.manifolds.size();
          ++point_id) {
@@ -179,7 +179,7 @@ TEST(ternary_cost, compile_test) {
   ManifoldFamily<3> point_family;
 
   CompileOnlyTernaryCostFunctorExample ba;
-  std::vector<CostTermRef<3>> arg_ids;
+  std::vector<CostTermSignature<3>> arg_ids;
 
   {
     apply(ba, arg_ids, Var(cam_family), Var(pose_family), Var(point_family));

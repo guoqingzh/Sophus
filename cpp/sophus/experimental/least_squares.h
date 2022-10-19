@@ -63,23 +63,26 @@ struct LeastSquaresCostTermState {
   Eigen::Matrix<double, kBlockDim, 1> gradient_segment;
   double cost;
   int num_subterms;
+
+  // TODO: Create an optional debug struct
+  // std::deque<Eigen::VectorXd> debug_residuals;
 };
 
-template <int kBlockDim, int kNumVarArgs>
+template <int kBlockDim, int kNumArgs>
 struct LeastSquaresCostTerm {
-  std::array<int, kNumVarArgs> manifold_ids;
+  std::array<int, kNumArgs> manifold_id_tuple;
   LeastSquaresCostTermState<kBlockDim> state;
 };
 
-template <int kBlockDim, int kNumVarArgs>
+template <int kBlockDim, int kNumArgs>
 struct CostFamily {
-  std::vector<LeastSquaresCostTerm<kBlockDim, kNumVarArgs>> cost_terms;
+  std::vector<LeastSquaresCostTerm<kBlockDim, kNumArgs>> cost_terms;
 };
 
-/// Manifold ids of the cost term arguments
+///
 template <int kArgs, class TConstArgT = farm_ng::Void>
-struct CostTermRef {
-  std::array<int, kArgs> arg_ids;
+struct CostTermSignature {
+  std::array<int, kArgs> manifold_id_tuple{};
   TConstArgT constant;
 };
 
@@ -167,17 +170,17 @@ struct ArgTypes {
 template <size_t kNumArgs, size_t kI = 0, int... kInputDim, class... TManifold>
 void costTermArgsFromIds(
     std::tuple<TManifold...>& cost_term_args,
-    std::array<int, kNumArgs> const& arg_ids,
+    std::array<int, kNumArgs> const& manifold_id_tuple,
     std::tuple<ManifoldFamily<kInputDim, TManifold>...> const&
         manifold_family_tuple) {
   if constexpr (kI == kNumArgs) {
     return;
   } else {
-    int const id = FARM_AT(arg_ids, kI);
+    int const id = FARM_AT(manifold_id_tuple, kI);
     std::get<kI>(cost_term_args) =
         FARM_AT(std::get<kI>(manifold_family_tuple).manifolds, id);
     costTermArgsFromIds<kNumArgs, kI + 1, kInputDim...>(
-        cost_term_args, arg_ids, manifold_family_tuple);
+        cost_term_args, manifold_id_tuple, manifold_family_tuple);
   }
 }
 
@@ -191,37 +194,17 @@ struct ManifoldFamilyTupleTraits<
 };
 
 template <
-    class TArgTypes,
-    size_t kNumArgs,
-    size_t kI = 0,
-    int... kInputDim,
-    class... TManifold>
-void costTermArgsFromFixedManifolds(
-    std::array<int, kNumArgs>& arg_ids,
-    std::tuple<TManifold...>& cost_term_args,
-    [[maybe_unused]] std::array<int, TArgTypes::kNumFixedArgs> fixed_arg_ids,
-    std::tuple<ManifoldFamily<kInputDim, TManifold>...> const&
-        manifold_family_tuple) {
-  if constexpr (kI == TArgTypes::kNumFixedArgs) {
-    return;
-  } else {
-    static int constexpr kArgPos = std::get<kI>(TArgTypes::kFixedArgPosArray);
-    int const fixed_id = FARM_AT(fixed_arg_ids, kI);
-    std::get<kArgPos>(cost_term_args) =
-        FARM_AT(std::get<kArgPos>(manifold_family_tuple).manifolds, fixed_id);
-    std::get<kArgPos>(arg_ids) = std::get<kI>(fixed_arg_ids);
-    costTermArgsFromFixedManifolds<TArgTypes, kNumArgs, kI + 1, kInputDim...>(
-        arg_ids, cost_term_args, fixed_arg_ids, manifold_family_tuple);
-  }
-}
-
-template <bool kCalcDx = true, class TCostFunctor, class... TCostTermArg>
+    bool kCalcDx = true,
+    class DebugStruct,
+    class TCostFunctor,
+    class... TCostTermArg>
 static CostFamily<
     ArgTypes<kCalcDx, TCostFunctor, TCostTermArg...>::kBlockDim,
-    ArgTypes<kCalcDx, TCostFunctor, TCostTermArg...>::kNumVarArgs>
+    ArgTypes<kCalcDx, TCostFunctor, TCostTermArg...>::kNumArgs>
 apply(
+    DebugStruct& out,
     [[maybe_unused]] TCostFunctor cost_functor,
-    std::vector<CostTermRef<
+    std::vector<CostTermSignature<
         ArgTypes<kCalcDx, TCostFunctor, TCostTermArg...>::kNumArgs,
         typename TCostFunctor::ConstantType>> const& arg_id_arrays,
     TCostTermArg const&... cost_arg) {
@@ -237,26 +220,27 @@ apply(
   auto manifold_family_tuple = std::make_tuple(cost_arg.family...);
   using ManifoldFamilyTuple = decltype(manifold_family_tuple);
 
-  CostFamily<kBlockDim, kNumVarArgs> cost_family;
+  CostFamily<kBlockDim, kNumArgs> cost_family;
   cost_family.cost_terms.reserve(arg_id_arrays.size());
 
   for (size_t i = 0; i < arg_id_arrays.size(); ++i) {
-    auto const& arg_ids = arg_id_arrays[i].arg_ids;
+    auto const& manifold_id_tuple = arg_id_arrays[i].manifold_id_tuple;
 
-    LeastSquaresCostTerm<kBlockDim, kNumVarArgs> cost_term;
+    LeastSquaresCostTerm<kBlockDim, kNumArgs> cost_term;
     for (; i < arg_id_arrays.size(); ++i) {
-      CostTermRef<kNumArgs, ConstantType> const& args = arg_id_arrays[i];
+      CostTermSignature<kNumArgs, ConstantType> const& args = arg_id_arrays[i];
 
-      FARM_CHECK(isLess<ArgTypesT>(arg_ids, args.arg_ids));
+      FARM_CHECK(isLess<ArgTypesT>(manifold_id_tuple, args.manifold_id_tuple));
 
       typename ManifoldFamilyTupleTraits<ManifoldFamilyTuple>::ManifoldTuple
           cost_term_args;
-      costTermArgsFromIds(cost_term_args, args.arg_ids, manifold_family_tuple);
+      costTermArgsFromIds(
+          cost_term_args, args.manifold_id_tuple, manifold_family_tuple);
       std::optional<LeastSquaresCostTermState<kBlockDim>> maybe_cost =
           std::apply(
-              [&args, &cost_functor](auto... arg) {
+              [&out, &args, &cost_functor](auto... arg) {
                 return cost_functor.template evalCostTerm<ArgTypesT>(
-                    arg..., args.constant);
+                    out, args.manifold_id_tuple, arg..., args.constant);
               },
               cost_term_args);
 
@@ -264,12 +248,13 @@ apply(
         continue;
       }
       auto cost = FARM_UNWRAP(maybe_cost);
+      cost_term.manifold_id_tuple = args.manifold_id_tuple;
       cost_term.state.gradient_segment += cost.gradient_segment;
       cost_term.state.hessian_block += cost.hessian_block;
       cost_term.state.cost += cost.cost;
       cost_term.state.num_subterms += 1;
 
-      if (!areAllVarEq<ArgTypesT>(arg_ids, args.arg_ids) ||
+      if (!areAllVarEq<ArgTypesT>(manifold_id_tuple, args.manifold_id_tuple) ||
           i == arg_id_arrays.size() - 1) {
         break;
       }
