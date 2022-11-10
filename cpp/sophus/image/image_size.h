@@ -43,6 +43,7 @@ struct ImageSize {
 
 /// Equality operator.
 bool operator==(ImageSize const& lhs, ImageSize const& rhs);
+bool operator!=(ImageSize const& lhs, ImageSize const& rhs);
 
 /// If the original width [height] is odd, the new width [height] will be:
 /// (width+1)/2 [height+1)/2].
@@ -109,6 +110,8 @@ class ImageShape {
 
 /// Equality operator.
 bool operator==(ImageShape const& lhs, ImageShape const& rhs);
+
+bool operator!=(ImageShape const& lhs, ImageShape const& rhs);
 
 /// Ostream operator.
 std::ostream& operator<<(std::ostream& os, ImageShape const& shape);
