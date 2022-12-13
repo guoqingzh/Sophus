@@ -15,7 +15,7 @@ if (NOT DEFINED SOPHUS_MASTER_PROJECT)
 endif ()
 
 option(SOPHUS_INSTALL "Generate the install target." ${SOPHUS_MASTER_PROJECT})
-option(SOPHUS_USE_BASIC_LOGGING "Use basic logging (in ensure and test macros)" OFF)
+option(SOPHUS_USE_BASIC_LOGGING "Use basic logging (in ensure and test macros)" ON)
 
 if(SOPHUS_MASTER_PROJECT)
   # Release by default
