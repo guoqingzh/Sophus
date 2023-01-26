@@ -55,6 +55,7 @@ endif()
 
 if(NOT TARGET Eigen3::Eigen)
   find_package(Eigen3 3.3.0 REQUIRED)
+  message(STATUS EIGEN3_VERSION)
 endif()
 
 if(NOT TARGET fmt::fmt)
